@@ -1,0 +1,51 @@
+name: Update Twitter Hashtags
+
+on:
+  # manual run
+  workflow_dispatch:
+  # daily at 05:00 UTC – change as needed
+  schedule:
+    - cron: '0 5 * * *'
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+
+    # ── secrets → env vars ───────────────────────────────────────
+    env:
+      SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+      SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
+      SUPABASE_DB:   ${{ secrets.SUPABASE_DB }}
+      SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+      SUPABASE_PWD:  ${{ secrets.SUPABASE_PWD }}
+
+    steps:
+      # 1 ▸ check out repository
+      - uses: actions/checkout@v4
+
+      # 2 ▸ install system libs many R pkgs need
+      - name: Install Linux libraries
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            libcurl4-openssl-dev libssl-dev libxml2-dev
+
+      # 3 ▸ set up R (uses Posit public binary cache)
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      # 4 ▸ run the hashtag enrichment script
+      - name: Extract & upload hashtags
+        run: Rscript scripts/enrich_twitter_hashtags.R
+
+      # 5 ▸ archive artefacts (optional)
+      - name: Upload artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hashtag-run-logs
+          path: |
+            *.Rout
+            *.log
+          if-no-files-found: ignore
