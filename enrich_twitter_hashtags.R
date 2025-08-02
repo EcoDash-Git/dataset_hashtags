@@ -23,15 +23,22 @@ creds <- Sys.getenv(
 if (any(!nzchar(creds)))
   stop("❌  One or more Supabase env vars are missing – aborting.")
 
+creds <- Sys.getenv(
+  c("SUPABASE_HOST","SUPABASE_PORT","SUPABASE_DB",
+    "SUPABASE_USER","SUPABASE_PWD"),
+  names = TRUE
+)
+
 con <- DBI::dbConnect(
   RPostgres::Postgres(),
   host     = creds["SUPABASE_HOST"],
   port     = as.integer(creds["SUPABASE_PORT"]),
-  dbname   = creds["SUPABASE_DB"],
+  dbname   = creds["SUPABASE_DB"],   # ← ➋ plain “dbname”, not “dbname.SUPABASE_DB”
   user     = creds["SUPABASE_USER"],
   password = creds["SUPABASE_PWD"],
   sslmode  = "require"
 )
+
 
 ## 2 – download tweets -------------------------------------------------------
 twitter_raw <- DBI::dbReadTable(con, "twitter_raw")
@@ -106,4 +113,5 @@ cat("✓ uploaded to table", dest_tbl, "\n")
 
 DBI::dbDisconnect(con)
 cat("✓ finished at", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
 
