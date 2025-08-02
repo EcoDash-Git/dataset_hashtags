@@ -37,7 +37,7 @@ jobs:
 
       # 4 ▸ run the hashtag enrichment script
       - name: Extract & upload hashtags
-        run: Rscript scripts/enrich_twitter_hashtags.R
+        run: Rscript enrich_twitter_hashtags.R
 
       # 5 ▸ archive artefacts (optional)
       - name: Upload artefacts
