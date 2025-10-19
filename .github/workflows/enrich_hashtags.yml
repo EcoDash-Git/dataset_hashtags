@@ -22,7 +22,7 @@ jobs:
 
     steps:
       # 1 ▸ check out repository
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 2 ▸ minimal Linux libraries many CRAN pkgs need
       - name: Install Linux libraries
