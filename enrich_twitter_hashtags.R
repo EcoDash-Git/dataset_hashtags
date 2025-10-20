@@ -46,6 +46,12 @@ con <- DBI::dbConnect(
 twitter_raw <- DBI::dbReadTable(con, "twitter_raw")
 cat("✓ downloaded", nrow(twitter_raw), "rows from twitter_raw\n")
 
+## 2.5 – ensure tweet_url exists (fallback if missing) -----------------------
+if (!"tweet_url" %in% names(twitter_raw)) {
+  twitter_raw <- twitter_raw %>%
+    mutate(tweet_url = paste0("https://twitter.com/", username, "/status/", tweet_id))
+}
+
 ## 3 – canonical IDs ---------------------------------------------------------
 main_ids <- tibble::tribble(
   ~username,            ~main_id,
@@ -93,11 +99,11 @@ main_ids <- tibble::tribble(
 )
 
 
-## 4 – explode tweets → hashtags --------------------------------------------
+## 4 – explode tweets → hashtags (now keeping tweet_url) ---------------------
 hashtags <- twitter_raw %>%
   left_join(main_ids, by = "username") %>%
   mutate(publish_dt = ymd_hms(date, tz = "UTC")) %>%
-  select(tweet_id, publish_dt, username, main_id, text) %>%
+  select(tweet_id, tweet_url, publish_dt, username, main_id, text) %>%
   mutate(tag = str_extract_all(text, "#\\w+")) %>%
   unnest(tag) %>%
   mutate(tag = str_to_lower(tag)) %>%          # normalise
@@ -119,6 +125,7 @@ cat("✓ uploaded to table", dest_tbl, "\n")
 
 DBI::dbDisconnect(con)
 cat("✓ finished at", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
 
 
 
