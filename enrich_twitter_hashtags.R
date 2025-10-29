@@ -1,14 +1,14 @@
 #!/usr/bin/env Rscript
 # ────────────────────────────────────────────────────────────────
 #  enrich_twitter_hashtags.R
-#  – downloads  twitter_raw
+#  – downloads  twitter_raw_plus_flags
 #  – explodes every tweet into one row per hashtag
 #  – uploads   public.twitter_hashtags   (OVERWRITE)
 # ────────────────────────────────────────────────────────────────
 
 ## 0 – packages --------------------------------------------------------------
 need <- c("DBI", "RPostgres", "dplyr", "stringr",
-          "tibble", "tidyr", "lubridate")
+          "tibble", "tidyr", "lubridate", "purrr")
 new  <- need[!need %in% rownames(installed.packages())]
 if (length(new))
   install.packages(new, repos = "https://cloud.r-project.org", quiet = TRUE)
@@ -16,35 +16,30 @@ invisible(lapply(need, library, character.only = TRUE))
 
 ## 1 – Supabase credentials (from GH Secrets) -------------------------------
 creds <- Sys.getenv(
-  c("SUPABASE_HOST", "SUPABASE_PORT", "SUPABASE_DB",
-    "SUPABASE_USER", "SUPABASE_PWD"),
+  c("SUPABASE_HOST","SUPABASE_PORT","SUPABASE_DB",
+    "SUPABASE_USER","SUPABASE_PWD"),
   names = TRUE
 )
 if (any(!nzchar(creds)))
   stop("❌  One or more Supabase env vars are missing – aborting.")
 
-creds <- Sys.getenv(
-  c("SUPABASE_HOST","SUPABASE_PORT","SUPABASE_DB",
-    "SUPABASE_USER","SUPABASE_PWD"),
-  names = TRUE
-)
-
 # ── DB connection ───────────────────────────────────────────
 con <- DBI::dbConnect(
   RPostgres::Postgres(),
-  host     = Sys.getenv("SUPABASE_HOST"),
-  port     = as.integer(Sys.getenv("SUPABASE_PORT", "6543")),
-  dbname   = "postgres",          # ← hard-coded DB name
-  user     = Sys.getenv("SUPABASE_USER"),
-  password = Sys.getenv("SUPABASE_PWD"),
+  host     = creds[["SUPABASE_HOST"]],
+  port     = as.integer(creds[["SUPABASE_PORT"]] %||% "6543"),
+  dbname   = creds[["SUPABASE_DB"]],     # use your secret, not hard-coded
+  user     = creds[["SUPABASE_USER"]],
+  password = creds[["SUPABASE_PWD"]],
   sslmode  = "require"
 )
 
-
+`%||%` <- function(x, y) if (is.null(x) || identical(x, "") || is.na(x)) y else x
 
 ## 2 – download tweets -------------------------------------------------------
-twitter_raw <- DBI::dbReadTable(con, "twitter_raw_plus_flags")
-cat("✓ downloaded", nrow(twitter_raw), "rows from twitter_raw\n")
+src_tbl <- "twitter_raw_plus_flags"
+twitter_raw <- DBI::dbReadTable(con, src_tbl)
+cat("✓ downloaded", nrow(twitter_raw), "rows from", src_tbl, "\n")
 
 ## 2.5 – ensure tweet_url exists (fallback if missing) -----------------------
 if (!"tweet_url" %in% names(twitter_raw)) {
@@ -52,46 +47,50 @@ if (!"tweet_url" %in% names(twitter_raw)) {
     mutate(tweet_url = paste0("https://twitter.com/", username, "/status/", tweet_id))
 }
 
-## 3 – canonical IDs ---------------------------------------------------------
+## 3 – canonical IDs (most common user_id per username) ---------------------
+# This creates a compact map: username -> main_id
 main_ids <- twitter_raw %>%
   filter(!is.na(user_id) & nzchar(user_id)) %>%
   group_by(username, user_id) %>%
-  summarise(n = n(), .groups = "drop") %>%
-  arrange(username, desc(n)) %>%
+  summarise(n = dplyr::n(), .groups = "drop") %>%
+  arrange(username, dplyr::desc(n)) %>%
   group_by(username) %>%
   slice_max(n, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
   select(username, main_id = user_id)
 
-
-## 4 – explode tweets → hashtags (now keeping tweet_url) ---------------------
+## 4 – explode tweets → hashtags (keep tweet_url) ---------------------------
+# Key changes:
+#  • left_join(main_ids) THEN force-create main_id using fallback from user_id
+#  • select() uses any_of() to avoid hard errors if a column is absent
 hashtags <- twitter_raw %>%
   left_join(main_ids, by = "username") %>%
-  mutate(publish_dt = ymd_hms(date, tz = "UTC")) %>%
-  select(tweet_id, tweet_url, publish_dt, username, main_id, text) %>%
-  mutate(tag = str_extract_all(text, "#\\w+")) %>%
-  unnest(tag) %>%
-  mutate(tag = str_to_lower(tag)) %>%          # normalise
+  mutate(
+    publish_dt = suppressWarnings(lubridate::ymd_hms(date, tz = "UTC")),
+    main_id    = dplyr::coalesce(main_id, user_id)  # ensure it exists
+  ) %>%
+  # keep only the columns we need; any_of prevents errors if a column is missing
+  select(dplyr::any_of(c("tweet_id","tweet_url","publish_dt","username","main_id","text"))) %>%
+  mutate(tag = stringr::str_extract_all(text %||% "", "#\\w+")) %>%
+  tidyr::unnest(tag, keep_empty = FALSE) %>%
+  mutate(tag = stringr::str_to_lower(tag)) %>%          # normalise
   distinct(tweet_id, tag, .keep_all = TRUE)
 
 cat("✓ extracted", nrow(hashtags), "hashtag rows\n")
 
 ## 5 – upload ---------------------------------------------------------------
-dest_tbl <- "twitter_hashtags"   # keep the name you wanted
-
+dest_tbl <- "twitter_hashtags"
 DBI::dbWriteTable(
   con,
-  name   = dest_tbl,
-  value  = as.data.frame(hashtags),
-  overwrite = TRUE,
-  row.names = FALSE
+  name       = dest_tbl,
+  value      = as.data.frame(hashtags),
+  overwrite  = TRUE,
+  row.names  = FALSE
 )
 cat("✓ uploaded to table", dest_tbl, "\n")
 
 DBI::dbDisconnect(con)
 cat("✓ finished at", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-
-
 
 
 
