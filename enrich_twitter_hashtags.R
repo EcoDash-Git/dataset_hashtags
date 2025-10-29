@@ -43,7 +43,7 @@ con <- DBI::dbConnect(
 
 
 ## 2 – download tweets -------------------------------------------------------
-twitter_raw <- DBI::dbReadTable(con, "twitter_raw")
+twitter_raw <- DBI::dbReadTable(con, "twitter_raw_plus_flag")
 cat("✓ downloaded", nrow(twitter_raw), "rows from twitter_raw\n")
 
 ## 2.5 – ensure tweet_url exists (fallback if missing) -----------------------
@@ -90,6 +90,7 @@ cat("✓ uploaded to table", dest_tbl, "\n")
 
 DBI::dbDisconnect(con)
 cat("✓ finished at", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
 
 
 
