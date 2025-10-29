@@ -71,7 +71,7 @@ hashtags <- twitter_raw %>%
     main_id    = dplyr::coalesce(.data[["main_id"]], .data[["map_main_id"]], .data[["user_id"]]),
     text       = dplyr::coalesce(as.character(text), "")     # <-- vectorized NA → ""
   ) %>%
-  select(dplyr::any_of(c("tweet_id","tweet_url","publish_dt","username","main_id","text"))) %>%
+  select(dplyr::any_of(c("tweet_id","tweet_url","publish_dt","username","main_id","text","tweet_type"))) %>%
   mutate(tag = stringr::str_extract_all(text, "#\\w+")) %>%   # <-- no %||% here
   tidyr::unnest(tag, keep_empty = FALSE) %>%
   mutate(tag = stringr::str_to_lower(tag)) %>%
@@ -92,6 +92,7 @@ cat("✓ uploaded to table", dest_tbl, "\n")
 
 DBI::dbDisconnect(con)
 cat("✓ finished at", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
 
 
 
