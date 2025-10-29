@@ -68,14 +68,15 @@ hashtags <- twitter_raw %>%
   { if (!has_main) left_join(., main_map, by = "username") else mutate(., map_main_id = NA_character_) } %>%
   mutate(
     publish_dt = suppressWarnings(lubridate::ymd_hms(date, tz = "UTC")),
-    # ensure there is a single `main_id` column:
-    main_id = dplyr::coalesce(.data[["main_id"]], .data[["map_main_id"]], .data[["user_id"]])
+    main_id    = dplyr::coalesce(.data[["main_id"]], .data[["map_main_id"]], .data[["user_id"]]),
+    text       = dplyr::coalesce(as.character(text), "")     # <-- vectorized NA → ""
   ) %>%
   select(dplyr::any_of(c("tweet_id","tweet_url","publish_dt","username","main_id","text"))) %>%
-  mutate(tag = stringr::str_extract_all(text %||% "", "#\\w+")) %>%
+  mutate(tag = stringr::str_extract_all(text, "#\\w+")) %>%   # <-- no %||% here
   tidyr::unnest(tag, keep_empty = FALSE) %>%
   mutate(tag = stringr::str_to_lower(tag)) %>%
   distinct(tweet_id, tag, .keep_all = TRUE)
+
 
 
 ## 5 – upload ---------------------------------------------------------------
@@ -91,6 +92,7 @@ cat("✓ uploaded to table", dest_tbl, "\n")
 
 DBI::dbDisconnect(con)
 cat("✓ finished at", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+
 
 
 
